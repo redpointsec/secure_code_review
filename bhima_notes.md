@@ -90,7 +90,7 @@ const publicRoutes = [
 ];
 ```
 ##### Authentication/Authorization
-- [ ]   app.post('/auth/login', auth.login);
+- [X]   app.post('/auth/login', auth.login);
 - [ ]   app.put('/users/:id/password', users.password);
 - [ ]   app.put('/roles/:uuid', rolesCtrl.update);
 - [ ]   app.post('/roles', rolesCtrl.create);
@@ -125,32 +125,238 @@ const publicRoutes = [
 - [ ]   app.put('/suppliers/:uuid', suppliers.update);
 - [ ]   app.put('/purchases/:uuid', purchases.update);
 - [ ]   app.put('/payroll_config/:id', payrollConfig.update);
-- [ ]   app.put('/accounts/:id', accounts.update);
+- [X]   app.put('/accounts/:id', accounts.update);
+   No Auth checks before updates
+   [bhima/index.js at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/controllers/finance/accounts/index.js#L65-L89)
+
+```javascript
+/**
+ * @method update
+ *
+ * @description
+ * Updates an account in the database.
+ *
+ * PUT /accounts/:id
+ */
+function update(req, res, next) {
+  const { id } = req.params;
+  const data = req.body;
+  const sql = 'UPDATE account SET ? WHERE id = ?';
+
+  delete data.id;
+
+  utility.lookupAccount(id)
+    .then(() => db.exec(sql, [data, id]))
+    .then(() => utility.lookupAccount(id))
+    .then((account) => {
+      res.status(200).json(account);
+    })
+    .catch(next)
+    .done();
+}
+
+```
 - [ ]   app.put('/services/:id', services.update);
 - [ ]   app.put('/subsidies/:id', subsidies.update);
 - [ ]   app.put('/fiscal/:id', fiscal.update);
 #### User Data
 - [ ]   app.put('/patients/:uuid', patients.update);
+
+### Authorization
+`bhima/server/controllers/auth.js`
+> * This controller is responsible for managing user authentication and
+>authorization to the entire application stack.
+
+[bhima/auth.js at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/controllers/auth.js#L72-L79)
+
+```javascript
+// a role should be assigned to the user
+  // each role has some units(paths or urls) that the user is allowed to access(permissions)
+  const sqlPermission = `
+    SELECT  user.id
+    FROM  user_role
+      JOIN user ON user.id =  user_role.user_id
+    WHERE user.username = ? AND user.password = PASSWORD(?)
+  `;
+```
+- [ ] Finace Account Mangement `bhima/server/controllers/finance/accounts/index.js`
+
+
+### Authentication
+* User Enum 
+`app.get('/users/:username/exists', users.exists);`
+!!! caution User Enum and Data leakage
+[bhima/index.js at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/controllers/admin/users/index.js#L117-L146)
+
+```javascript
+/**
+ * @function detail
+ *
+ * @description
+ * This endpoint will return a single JSON object containing the full user row
+ * for the user with matching ID.  If no matching user exists, it will return a
+ * 404 error.
+ *
+ * For consistency with the CREATE method, this route also returns a user's project
+ * permissions.
+ *
+ * GET /users/:id
+ */
+function detail(req, res, next) {
+  lookupUser(req.params.id)
+    .then((data) => {
+      res.status(200).json(data);
+    })
+    .catch(next);
+}
+
+function exists(req, res, next) {
+  const sql = 'SELECT count(id) as nbr FROM user WHERE username=?';
+
+  db.one(sql, req.params.username)
+    .then((data) => {
+      res.send(data.nbr !== 0);
+    })
+    .catch(next);
+}
+```
+
+[bhima/server/models/schema.sql](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/models/schema.sql#L1757-L1769)
+
+```sql
+CREATE TABLE `user` (
+  `id`            SMALLINT(5) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `username`      VARCHAR(80) NOT NULL,
+  `password`      VARCHAR(100) NOT NULL,
+  `display_name`  TEXT NOT NULL,
+  `email`         VARCHAR(100) DEFAULT NULL,
+  `active`        TINYINT(4) NOT NULL DEFAULT 0,
+  `deactivated`   TINYINT(1) NOT NULL DEFAULT 0,
+  `last_login`    TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `user_1` (`username`)
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 DEFAULT COLLATE = utf8mb4_unicode_ci;
+
+```
+!!!
+* Login page give error messages, check for enumeration
+` app.post('/auth/login', auth.login);`
+
+!!! caution Username Enumeration
+[bhima/auth.js at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/controllers/auth.js#L91-L103)
+
+```javascript
+if (hasAuthorization) {
+    if (Boolean(user[0].deactivated)) {
+      throw new Unauthorized('The user is not activated, contact the administrator', 'FORM.ERRORS.LOCKED_USER');
+    }
+
+    if (isMissingPermissions) {
+      throw new Unauthorized('No permissions in the database.', 'ERRORS.NO_PERMISSIONS');
+    }
+  } else if (isUnrecognizedUser) {
+    throw new Unauthorized('Bad username and password combination.');
+  } else {
+    throw new Unauthorized('No permissions for that project.', 'ERRORS.NO_PROJECT');
+  }
+```
+!!!
+* Password Change
+`app.put('/users/:id/password', users.password);`
+!!! caution password reset
+[bhima/index.js at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/controllers/admin/users/index.js#L255-L275)
+
+```javascript
+/**
+ * @function password
+ *
+ * @description
+ * PUT /users/:id/password
+ *
+ * This endpoint updates a user's password with ID :id.  If the user is not
+ * found, the server sends back a 404 error.
+ */
+function password(req, res, next) {
+  // TODO -- strict check to see if the user is either signed in or has
+  // sudo permissions.
+  const sql = `UPDATE user SET password = PASSWORD(?) WHERE id = ?;`;
+
+  db.exec(sql, [req.body.password, req.params.id])
+    .then(() => lookupUser(req.params.id))
+    .then((data) => {
+      res.status(200).json(data);
+    })
+    .catch(next);
+}
+```
+!!!
+- [ ] Forgot password
+
+
 ## Mapping / Authorization Decorators
 
-- [ ] `ensure_logged_in`
+**didn't see any yet**
+
+## Auditing/Logging
+Debug Package
+`bhima/node_modules/@types/debug/index.d.ts`
+
+!!! note Logging IP GDPR?
+[bhima/express.js at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/config/express.js#L107-L115)
+
+```javascript
+app.use((req, res, next) => {
+    if (_.isUndefined(req.session.user) && !within(req.path, publicRoutes)) {
+      debug(`Rejecting unauthorized access to ${req.path} from ${req.ip}`);
+      next(new Unauthorized('You are not logged into the system.'));
+    } else {
+      next();
+    }
+  });
+};
+```
+!!!
+
+!!! caution Logging AccountID and Balance
+[bhima/index.js at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/controllers/finance/accounts/index.js#L318-L320)
+
+```javascript
+.then(balances => {
+      debug('#getOpeningBalanceForPeriod() computed %j balances for account id %s.', balances, accountId);
+      res.status(200).json(balances);
+```
+!!!
 
 ## Mapping / Files
 
 - [ ] /path/to/some/important/file.sh
 
-### Authentication
-- [ ] Login page give error messages, check for enumeration
-- [ ] Signup page allows for freeform passwords, does it implement proper password complexity?
 
-### Authorization
-- [ ] Uses @login_required decorator, is it applied on all endpoints appropriately?
 
-### Auditing/Logging
-- [ ] Logging configuration is in `settings.py`, check documentation for secure settings
+
+
+
 
 ### Injection
-- [ ] ORM `where` function allows for string concatenation, search for all instances
+* Cmd Injection but not really
+```javascript
+/**
+ * @method execp
+ *
+ * @description
+ * This method promisifies the child process exec() function.  It is used in
+ * lib/backup.js, but will likely be handy in other places as well.
+ */
+function execp(cmd) {
+  debug(`#execp(): ${cmd}`);
+  const deferred = q.defer();
+  const child = exec(cmd);
+  child.addListener('error', deferred.reject);
+  child.addListener('exit', deferred.resolve);
+  return deferred.promise;
+}
+
+```
 
 ### Cryptography
 - [ ] References to base64 when handling passwords, is this bad?
