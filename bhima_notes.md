@@ -357,9 +357,40 @@ function execp(cmd) {
 }
 
 ```
+!!!
 
 ### Cryptography
-- [ ] References to base64 when handling passwords, is this bad?
+!!! caution Session Secret
+
+[bhima/.env.development at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/.env.development#L9-L11)
+
+```plaintext
+# session variables
+SESS_SECRET='XopEn BlowFISH'
+```
+!!!
+
+!!! caution mysql PASSWORD used 
+[bhima/index.js at 47ae140a78b23d1d4d9350c7e8b6caeae50d8335 · IMA-WorldHealth/bhima · GitHub](https://github.com/IMA-WorldHealth/bhima/blob/47ae140a78b23d1d4d9350c7e8b6caeae50d8335/server/controllers/admin/users/index.js#L167-L170)
+
+```javascript
+let sql = `
+    INSERT INTO user (username, password, email, display_name) VALUES
+    (?, PASSWORD(?), ?, ?);
+  `;
+```
+
+[Mysql Password](https://mysqlserverteam.com/protecting-mysql-passwords-with-the-sha256_password-plugin/)
+!!!
+
+## Config
+!!! note Superuser defaults
+```sql
+-- create a superuser
+INSERT INTO user (id, username, password, display_name, email, deactivated) VALUE
+  (1, 'superuser', PASSWORD('superuser'), 'Adminstrator', 'developper@imaworldhealth.org', 0);
+  ```
+!!!
 ## Dependencies
 
 ```json
